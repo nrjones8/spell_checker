@@ -2,6 +2,7 @@
 
 import re
 from heapq import heappush, heappushpop
+from tokenizer import Tokenizer
 
 class SpellChecker:
 
@@ -10,6 +11,7 @@ class SpellChecker:
 		self.dictionary = self.get_dictionary(dict_location)
 		self.letter_and_length_dictionary = self.preprocess_dictionary(self.dictionary)
 		self.io = CheckerIO()
+		self.tokenizer = Tokenizer()
 
 	def get_dictionary(self, dict_location):
 		return set([w.strip() for w in file(dict_location).readlines()])
@@ -24,7 +26,7 @@ class SpellChecker:
 
 		return first_letter_to_length_words
 
-	def get_closest_words(self, word, k = 5):
+	def get_closest_words(self, word, cands, k = 5):
 		'''
 		Returns <word> if <word> is in self.dictionary, or the closest <k>
 		words measured by the <edit_distance> function
@@ -32,13 +34,10 @@ class SpellChecker:
 		if word in self.dictionary:
 			return word
 		else:
-			# TODO check if there aren't <k> candidates
-			all_candidate_words = self.initial_filter(word)
-			
 			# Each entry (word, distance)
 			candidate_dists = []
 			# Could use a heap here instead
-			for cand in all_candidate_words:
+			for cand in cands:
 				cand_dist = edit_distance(word, cand)
 				if len(candidate_dists) < k:
 					heappush(candidate_dists, (- cand_dist, cand))
@@ -64,27 +63,35 @@ class SpellChecker:
 
 		for acceptable_length in range(min_length_to_check, max_length_to_check + 1):
 			# Check if there exists a word of length <acceptable_length> that starts with <first_letter>
-			if acceptable_length in self.letter_and_length_dictionary[first_letter]:
-				candidates.update(self.letter_and_length_dictionary[first_letter][acceptable_length])
+			if first_letter in self.letter_and_length_dictionary:
+				if acceptable_length in self.letter_and_length_dictionary[first_letter]:
+					candidates.update(self.letter_and_length_dictionary[first_letter][acceptable_length])
+			else:
+				candidates = []
+				print 'No words in our dictionary start with "%s"' % first_letter
 
 		return candidates 
 
 	def check_line(self, line):
-		tokens = tokenize(line)
-		corrected_tokens = tokens
+		tokens = self.tokenizer.tokenize(line)
 		corrected_line = line
 
-		for i in range(len(tokens)):
-			word = tokens[i]
+		for word in tokens:
+			stripped_word = word.lower().strip()
 
-			if len(word) != 0:
-				candidate_replacements = self.get_closest_words(word)
-				if candidate_replacements != word:
-					# If misspelled, user selects one of the closest (by edit_distance) replacements
-					corrected_word = self.io.get_replacement_from_user(line, word, candidate_replacements)
-					# Replacement first occurence of <word> in <line> with <corrected_word>
-					corrected_line = corrected_line.replace(word, corrected_word, 1)
-					corrected_tokens[i] = corrected_word
+			if len(stripped_word) != 0:
+				if stripped_word not in self.dictionary:
+					# TODO check if there aren't <k> candidates
+					initial_cands = self.initial_filter(stripped_word)
+					if len(initial_cands) > 0:
+						candidate_replacements = self.get_closest_words(stripped_word, initial_cands)
+
+						# If misspelled, user selects one of the closest (by edit_distance) replacements
+						corrected_word = self.io.get_replacement_from_user(line, word, candidate_replacements)
+						# Replacement first occurence of <word> in <line> with <corrected_word>
+						corrected_line = corrected_line.replace(word, corrected_word, 1)
+					else:
+						print 'No suggestions found for "%s"' % word
 					
 		return corrected_line
 
@@ -182,14 +189,14 @@ def edit_distance(s1, s2, insertion_cost = 1, deletion_cost = 1, sub_cost = 2):
 def main():
 	sc = SpellChecker()
 	infile = 'test_text.txt'
+	#infile = '/Users/nickjones/Downloads/0643/0643/APPLING1DAT.643'
 	
 	all_lines = file(infile).readlines()
 	revised_lines = []
 	for line in all_lines:
 		correct_line = sc.check_line(line)
 		revised_lines.append(correct_line)
-		# print 'Had tokens', tokenize(line)
-		# print 'Now has', correct_line
+		
 	sc.write_new_file(revised_lines, infile)
 	print ''.join(revised_lines)
 	
